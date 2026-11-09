@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cloud Music Gallery</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/">♫ Cloud Music</a>
+  <input id="search" type="search" placeholder="Search title or artist…" autocomplete="off">
+</header>
+
+<main>
+  <section id="drop" class="drop" tabindex="0">
+    <p class="big">Drop music here or <label for="file" class="link">browse</label></p>
+    <p class="muted">MP3, WAV, OGG, FLAC, M4A, AAC · up to {{ max_mb }} MB each · stored in Amazon S3</p>
+    <input id="file" type="file" accept=".mp3,.wav,.ogg,.flac,.m4a,.aac,audio/*" multiple hidden>
+    <input id="artist" class="artist" placeholder="Artist name (optional, applied to this upload)">
+    <div id="queue"></div>
+  </section>
+
+  <h2 id="count">Gallery</h2>
+  <section id="grid" class="grid" aria-live="polite"></section>
+  <p id="empty" class="muted center" hidden>No tracks yet — upload the first one!</p>
+</main>
+
+<footer class="player" id="player" hidden>
+  <div class="np"><div class="eq" id="eq"><i></i><i></i><i></i></div>
+    <div><div id="npTitle" class="t"></div><div id="npArtist" class="muted"></div></div></div>
+  <div class="ctrl">
+    <button id="prev" title="Previous">⏮</button>
+    <button id="pp" class="pp" title="Play / pause">▶</button>
+    <button id="next" title="Next">⏭</button>
+  </div>
+  <div class="seek"><span id="cur">0:00</span>
+    <input id="bar" type="range" min="0" max="1000" value="0"><span id="dur">0:00</span></div>
+  <input id="vol" type="range" min="0" max="100" value="80" title="Volume">
+</footer>
+<audio id="audio" preload="none"></audio>
+<div id="toast" class="toast" role="status"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

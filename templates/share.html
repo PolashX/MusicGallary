@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ t.title ~ ' – Cloud Music' if t else 'Not found – Cloud Music' }}</title>
+{% if t %}
+<meta property="og:title" content="{{ t.title }}">
+<meta property="og:description" content="{{ t.artist or 'Listen on Cloud Music' }}">
+<meta property="og:type" content="music.song"><meta property="og:url" content="{{ url }}">
+{% endif %}
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="share">
+<main class="share-card">
+  <a class="brand" href="/">♫ Cloud Music</a>
+  {% if t %}
+  <div class="disc" id="disc"></div>
+  <h1>{{ t.title }}</h1>
+  <p class="muted">{{ t.artist or 'Unknown artist' }} · {{ t.ext|upper }}</p>
+  <audio id="a" controls preload="metadata" src="/api/tracks/{{ t.id }}/stream"></audio>
+  <div class="row">
+    <a class="btn primary" href="/api/tracks/{{ t.id }}/download">⬇ Download</a>
+    <a class="btn" href="/">Open gallery</a>
+  </div>
+  <script>
+    var a=document.getElementById('a'),d=document.getElementById('disc'),c=false;
+    a.addEventListener('play',function(){d.classList.add('spin');if(!c){c=true;fetch('/api/tracks/{{ t.id }}/play',{method:'POST'})}});
+    a.addEventListener('pause',function(){d.classList.remove('spin')});
+  </script>
+  {% else %}
+  <h1>Track not found</h1><p class="muted">It may have been deleted by the uploader.</p>
+  <a class="btn primary" href="/">Open gallery</a>
+  {% endif %}
+</main>
+</body>
+</html>
