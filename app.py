@@ -31,24 +31,78 @@ if os.environ.get("TRUST_PROXY") == "1":  # behind Nginx / ALB
 
 s3 = boto3.client("s3", region_name=REGION)
 
-MIME = {"mp3": "audio/mpeg", "wav": "audio/wav", "ogg": "audio/ogg",
-        "flac": "audio/flac", "m4a": "audio/mp4", "aac": "audio/aac"}
+AUDIO_EXTENSIONS = {
+    "mp3", "wav", "ogg", "flac", "m4a", "aac",
+    "wma", "aiff", "aif", "opus"
+}
+
+VIDEO_EXTENSIONS = {
+    "mp4", "m4v", "mov", "3gp", "3g2", "webm",
+    "mkv", "avi", "mpeg", "mpg", "wmv", "ts"
+}
+
+MIME = {
+    "mp3": "audio/mpeg",
+    "wav": "audio/wav",
+    "ogg": "audio/ogg",
+    "flac": "audio/flac",
+    "m4a": "audio/mp4",
+    "aac": "audio/aac",
+    "wma": "audio/x-ms-wma",
+    "aiff": "audio/aiff",
+    "aif": "audio/aiff",
+    "opus": "audio/ogg",
+    "mp4": "video/mp4",
+    "m4v": "video/x-m4v",
+    "mov": "video/quicktime",
+    "3gp": "video/3gpp",
+    "3g2": "video/3gpp2",
+    "webm": "video/webm",
+    "mkv": "video/x-matroska",
+    "avi": "video/x-msvideo",
+    "mpeg": "video/mpeg",
+    "mpg": "video/mpeg",
+    "wmv": "video/x-ms-wmv",
+    "ts": "video/mp2t"
+}
+
+
+def media_type(ext):
+    return "video" if ext in VIDEO_EXTENSIONS else "audio"
 
 
 def looks_like(ext, h):
-    """Magic-byte check so a renamed .exe cannot be stored as music."""
+    """Basic file-signature checks for supported media containers."""
     if ext == "mp3":
-        return h.startswith(b"ID3") or (len(h) > 1 and h[0] == 0xFF and (h[1] & 0xE0) == 0xE0)
+        return h.startswith(b"ID3") or (
+            len(h) > 1 and h[0] == 0xFF and (h[1] & 0xE0) == 0xE0
+        )
     if ext == "wav":
         return h[:4] == b"RIFF" and h[8:12] == b"WAVE"
-    if ext == "ogg":
+    if ext in ("ogg", "opus"):
         return h[:4] == b"OggS"
     if ext == "flac":
         return h[:4] == b"fLaC"
-    if ext == "m4a":
-        return h[4:8] == b"ftyp"
+    if ext in ("m4a", "mp4", "m4v", "mov", "3gp", "3g2"):
+        return len(h) >= 8 and h[4:8] == b"ftyp"
     if ext == "aac":
         return len(h) > 1 and h[0] == 0xFF and (h[1] & 0xF0) == 0xF0
+    if ext in ("aiff", "aif"):
+        return h[:4] == b"FORM" and h[8:12] in (b"AIFF", b"AIFC")
+    if ext in ("wma", "wmv"):
+        return h.startswith(bytes.fromhex("3026B2758E66CF11A6D900AA0062CE6C"))
+    if ext in ("webm", "mkv"):
+        return h.startswith(bytes.fromhex("1A45DFA3"))
+    if ext == "avi":
+        return h[:4] == b"RIFF" and h[8:12] == b"AVI "
+    if ext in ("mpeg", "mpg"):
+        is_audio = h.startswith(b"ID3") or (
+            len(h) > 1 and h[0] == 0xFF and (h[1] & 0xE0) == 0xE0
+        )
+        is_video = h.startswith(b"\x00\x00\x01")
+        return is_audio or is_video
+    if ext == "ts":
+        return len(h) > 0 and h[0] == 0x47
     return False
 
 
@@ -80,7 +134,7 @@ def init_db():
 
 def track_json(r):
     return {"id": r["public_id"], "title": r["title"], "artist": r["artist"],
-            "ext": r["ext"], "size": r["size"], "plays": r["plays"],
+            "ext": r["ext"], "media_type": media_type(r["ext"]), "size": r["size"], "plays": r["plays"],
             "created_at": r["created_at"]}
 
 
@@ -101,7 +155,7 @@ def rate_limited(ip):
     now, q = time.time(), _hits[ip]
     while q and now - q[0] > 3600:
         q.popleft()
-    if len(q) >= UPLOADS_PER_HOUR:
+    if UPLOADS_PER_HOUR > 0 and len(q) >= UPLOADS_PER_HOUR:
         return True
     q.append(now)
     return False
@@ -143,36 +197,90 @@ def list_tracks():
 def upload():
     if rate_limited(request.remote_addr or "unknown"):
         return jsonify(error="Upload limit reached. Try again later."), 429
+
     f = request.files.get("file")
     if not f or not f.filename:
         return jsonify(error="No file selected."), 400
+
     name = secure_filename(f.filename)
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+
     if ext not in MIME:
-        return jsonify(error="Allowed types: " + ", ".join(sorted(MIME))), 400
-    data = f.read()
-    if len(data) > MAX_MB * 1024 * 1024:
+        allowed = ", ".join(sorted(MIME))
+        return jsonify(error="Unsupported file type. Allowed extensions: " + allowed), 400
+
+    # Check file size without loading the entire file into RAM.
+    try:
+        f.stream.seek(0, os.SEEK_END)
+        size = f.stream.tell()
+        f.stream.seek(0)
+    except (OSError, AttributeError):
+        return jsonify(error="Could not read uploaded file."), 400
+
+    if size <= 0:
+        return jsonify(error="The uploaded file is empty."), 400
+    if size > MAX_MB * 1024 * 1024:
         return jsonify(error=f"File too large (max {MAX_MB} MB)."), 413
-    if not looks_like(ext, data[:16]):
-        return jsonify(error="File content is not valid " + ext.upper() + " audio."), 400
+
+    header = f.stream.read(32)
+    f.stream.seek(0)
+
+    if not looks_like(ext, header):
+        return jsonify(error="File content does not match the selected " + ext.upper() + " format."), 400
+
+    # MPEG audio files uploaded with .mpeg/.mpg are stored as MP3.
+    is_mpeg_audio = ext in ("mpeg", "mpg") and (
+        header.startswith(b"ID3") or
+        (len(header) > 1 and header[0] == 0xFF and (header[1] & 0xE0) == 0xE0)
+    )
+    stored_ext = "mp3" if is_mpeg_audio else ext
 
     pid = secrets.token_urlsafe(6)
-    key = f"music/{pid}.{ext}"
-    s3.put_object(Bucket=BUCKET, Key=key, Body=data, ContentType=MIME[ext],
-                  ServerSideEncryption="AES256")
-    title = request.form.get("title", "").strip()[:120] or re.sub(r"[_-]+", " ", name.rsplit(".", 1)[0])
+    key = f"music/{pid}.{stored_ext}"
+
+    try:
+        s3.upload_fileobj(
+            f.stream,
+            BUCKET,
+            key,
+            ExtraArgs={
+                "ContentType": MIME[stored_ext],
+                "ServerSideEncryption": "AES256"
+            }
+        )
+    except Exception:
+        app.logger.exception("S3 upload failed")
+        return jsonify(error="Cloud storage upload failed. Please try again."), 500
+
+    title = request.form.get("title", "").strip()[:120]
+    if not title:
+        title = re.sub(r"[_-]+", " ", name.rsplit(".", 1)[0])
     artist = request.form.get("artist", "").strip()[:80]
     token = secrets.token_urlsafe(24)
-    con = db()
-    con.execute("INSERT INTO tracks (public_id,title,artist,filename,s3_key,ext,size,delete_hash,created_at)"
-                " VALUES (?,?,?,?,?,?,?,?,?)",
-                (pid, title, artist, name, key, ext, len(data),
-                 hashlib.sha256(token.encode()).hexdigest(),
-                 datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")))
-    con.commit()
-    row = con.execute("SELECT * FROM tracks WHERE public_id = ?", (pid,)).fetchone()
-    con.close()
+
+    try:
+        con = db()
+        con.execute(
+            "INSERT INTO tracks (public_id,title,artist,filename,s3_key,ext,size,delete_hash,created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                pid, title, artist, name, key, stored_ext, size,
+                hashlib.sha256(token.encode()).hexdigest(),
+                datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+            )
+        )
+        con.commit()
+        row = con.execute(
+            "SELECT * FROM tracks WHERE public_id = ?", (pid,)
+        ).fetchone()
+        con.close()
+    except Exception:
+        app.logger.exception("Database save failed after S3 upload")
+        s3.delete_object(Bucket=BUCKET, Key=key)
+        return jsonify(error="Could not save file information."), 500
+
     return jsonify(track=track_json(row), delete_token=token), 201
+
 
 
 def _signed(t, disposition):

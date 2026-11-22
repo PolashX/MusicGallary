@@ -1,12 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ t.title ~ ' – Cloud Music' if t else 'Not found – Cloud Music' }}</title>
 {% if t %}
 <meta property="og:title" content="{{ t.title }}">
-<meta property="og:description" content="{{ t.artist or 'Listen on Cloud Music' }}">
-<meta property="og:type" content="music.song"><meta property="og:url" content="{{ url }}">
+<meta property="og:description" content="{{ t.artist or 'Cloud Music Gallery' }}">
+<meta property="og:type" content="website">
+<meta property="og:url" content="{{ url }}">
 {% endif %}
 <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -17,18 +19,40 @@
   <div class="disc" id="disc"></div>
   <h1>{{ t.title }}</h1>
   <p class="muted">{{ t.artist or 'Unknown artist' }} · {{ t.ext|upper }}</p>
-  <audio id="a" controls preload="metadata" src="/api/tracks/{{ t.id }}/stream"></audio>
+
+  {% if t.media_type == 'video' %}
+  <video class="share-video" controls playsinline preload="metadata"
+         src="/api/tracks/{{ t.id }}/stream"></video>
+  {% else %}
+  <audio id="a" controls preload="metadata"
+         src="/api/tracks/{{ t.id }}/stream"></audio>
+  {% endif %}
+
   <div class="row">
     <a class="btn primary" href="/api/tracks/{{ t.id }}/download">⬇ Download</a>
     <a class="btn" href="/">Open gallery</a>
   </div>
+
   <script>
-    var a=document.getElementById('a'),d=document.getElementById('disc'),c=false;
-    a.addEventListener('play',function(){d.classList.add('spin');if(!c){c=true;fetch('/api/tracks/{{ t.id }}/play',{method:'POST'})}});
-    a.addEventListener('pause',function(){d.classList.remove('spin')});
+    var disc = document.getElementById('disc');
+    var media = document.querySelector('audio, video');
+    var counted = false;
+    if (media) {
+      media.addEventListener('play', function () {
+        if (disc) disc.classList.add('spin');
+        if (!counted) {
+          counted = true;
+          fetch('/api/tracks/{{ t.id }}/play', {method: 'POST'});
+        }
+      });
+      media.addEventListener('pause', function () {
+        if (disc) disc.classList.remove('spin');
+      });
+    }
   </script>
   {% else %}
-  <h1>Track not found</h1><p class="muted">It may have been deleted by the uploader.</p>
+  <h1>File not found</h1>
+  <p class="muted">It may have been deleted by the uploader.</p>
   <a class="btn primary" href="/">Open gallery</a>
   {% endif %}
 </main>

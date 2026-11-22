@@ -11,14 +11,39 @@
   <input id="search" type="search" placeholder="Search title or artist…" autocomplete="off">
 </header>
 
-<main>
-  <section id="drop" class="drop" tabindex="0">
-    <p class="big">Drop music here or <label for="file" class="link">browse</label></p>
-    <p class="muted">MP3, WAV, OGG, FLAC, M4A, AAC · up to {{ max_mb }} MB each · stored in Amazon S3</p>
-    <input id="file" type="file" accept=".mp3,.wav,.ogg,.flac,.m4a,.aac,audio/*" multiple hidden>
-    <input id="artist" class="artist" placeholder="Artist name (optional, applied to this upload)">
-    <div id="queue"></div>
-  </section>
+<main>\n
+
+
+  
+<section class="music-hero">
+  <div class="hero-content">
+    <span class="hero-label">CLOUD MUSIC EXPERIENCE</span>
+    <h1>ALL YOUR MUSIC.<br><span>ONE PLACE.</span></h1>
+    <p>Discover, upload and enjoy your favourite audio and videos.</p>
+    <div class="hero-tags">
+      <span>♫ MUSIC</span>
+      <span>♫ AUDIO</span>
+      <span>▶ VIDEO</span>
+    </div>
+  </div>
+  <div class="hero-art">
+    <div class="art-panel art-one"><span>NOW</span><strong>PLAY</strong><small>YOUR SOUND</small></div>
+    <div class="art-panel art-two"><span>HOT</span><strong>HITS</strong><small>TOP COLLECTION</small></div>
+    <div class="art-panel art-three"><span>NEW</span><strong>VIBES</strong><small>DISCOVER MORE</small></div>
+  </div>
+</section>
+
+<section id="drop" class="upload-banner">
+  <input id="file" type="file"
+    accept="audio/*,video/*,.mp3,.wav,.ogg,.flac,.m4a,.aac,.wma,.aiff,.aif,.opus,.mp4,.m4v,.mov,.3gp,.3g2,.webm,.mkv,.avi,.mpeg,.mpg,.wmv,.ts"
+    multiple hidden>
+  <label for="file" class="upload-button">
+    <span class="upload-icon">＋</span>
+    <span>Choose Audio or Video</span>
+  </label>
+  <div id="queue"></div>
+</section>
+
 
   <h2 id="count">Gallery</h2>
   <section id="grid" class="grid" aria-live="polite"></section>

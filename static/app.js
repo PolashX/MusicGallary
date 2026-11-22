@@ -1,6 +1,13 @@
 (function () {
   var $ = function (s) { return document.querySelector(s); };
   var audio = $('#audio'), grid = $('#grid'), tracks = [], cur = -1, curId = null;
+  var video = document.createElement('video');
+  video.className = 'gallery-video';
+  video.controls = true;
+  video.playsInline = true;
+  video.preload = 'metadata';
+  video.hidden = true;
+  grid.parentNode.insertBefore(video, grid);
   var tokens = {};
   try { tokens = JSON.parse(localStorage.getItem('mg_tokens') || '{}'); } catch (e) {}
   function saveTokens() { try { localStorage.setItem('mg_tokens', JSON.stringify(tokens)); } catch (e) {} }
@@ -27,8 +34,8 @@
     tracks.forEach(function (t, i) {
       var card = el('article', 'card' + (t.id === curId ? ' playing' : ''));
       var h = hue(t.id);
-      var cover = el('div', 'cover'); cover.style.background = 'linear-gradient(135deg,hsl(' + h + ',70%,55%),hsl(' + (h + 50) + ',70%,40%))';
-      cover.appendChild(el('span', '', '♪'));
+      var cover = el('div', 'cover'); cover.style.background = '';
+      cover.appendChild(el('span', '', t.media_type === 'video' ? '▶' : '♪'));
       var ov = el('div', 'ov', t.id === curId && !audio.paused ? '⏸' : '▶'); cover.appendChild(ov);
       cover.onclick = function () { play(i); };
       card.appendChild(cover);
@@ -47,19 +54,56 @@
   function play(i) {
     if (i < 0 || i >= tracks.length) return;
     var t = tracks[i];
-    if (t.id === curId) { audio.paused ? audio.play() : audio.pause(); return; }
-    cur = i; curId = t.id;
-    audio.src = '/api/tracks/' + t.id + '/stream';
-    audio.play().catch(function () { toast('Tap play to start'); });
-    $('#player').hidden = false; $('#npTitle').textContent = t.title; $('#npArtist').textContent = t.artist || 'Unknown artist';
+    var isVideo = t.media_type === 'video';
+
+    if (t.id === curId) {
+      if (isVideo) {
+        video.paused ? video.play().catch(function () { toast('Could not play this video'); }) : video.pause();
+      } else {
+        audio.paused ? audio.play().catch(function () { toast('Could not play this audio'); }) : audio.pause();
+      }
+      return;
+    }
+
+    cur = i;
+    curId = t.id;
+
+    if (isVideo) {
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+      $('#player').hidden = true;
+      video.hidden = false;
+      video.src = '/api/tracks/' + t.id + '/stream';
+      video.play().catch(function () { toast('Press play to start this video'); });
+    } else {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+      video.hidden = true;
+      audio.src = '/api/tracks/' + t.id + '/stream';
+      $('#player').hidden = false;
+      audio.play().catch(function () { toast('Tap play to start'); });
+    }
+
+    $('#npTitle').textContent = t.title;
+    $('#npArtist').textContent = t.artist || 'Unknown artist';
     document.title = '▶ ' + t.title;
-    fetch('/api/tracks/' + t.id + '/play', { method: 'POST' }).then(function (r) { return r.json(); })
-      .then(function (d) { t.plays = d.plays; });
-    if ('mediaSession' in navigator) {
-      navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist || 'Cloud Music' });
+
+    fetch('/api/tracks/' + t.id + '/play', { method: 'POST' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { t.plays = d.plays; render(); })
+      .catch(function () {});
+
+    if ('mediaSession' in navigator && !isVideo) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: t.title,
+        artist: t.artist || 'Cloud Music'
+      });
       navigator.mediaSession.setActionHandler('previoustrack', function () { play(cur - 1); });
       navigator.mediaSession.setActionHandler('nexttrack', function () { play(cur + 1); });
     }
+
     render();
   }
   function sync() { $('#pp').textContent = audio.paused ? '▶' : '⏸'; $('#eq').classList.toggle('on', !audio.paused); render(); }
@@ -92,7 +136,16 @@
     fetch('/api/tracks/' + t.id, { method: 'DELETE', headers: { 'X-Delete-Token': tokens[t.id] || '' } }).then(function (r) {
       if (r.status === 204) {
         delete tokens[t.id]; saveTokens();
-        if (curId === t.id) { audio.pause(); audio.removeAttribute('src'); $('#player').hidden = true; curId = null; document.title = 'Cloud Music Gallery'; }
+        if (curId === t.id) {
+          audio.pause();
+          audio.removeAttribute('src');
+          video.pause();
+          video.removeAttribute('src');
+          video.hidden = true;
+          $('#player').hidden = true;
+          curId = null;
+          document.title = 'Cloud Music Gallery';
+        }
         toast('Deleted'); load($('#search').value.trim());
       } else toast('Could not delete');
     });
@@ -110,7 +163,7 @@
     busy = true; var f = pending.shift();
     var row = el('div', 'q'); row.appendChild(el('div', '', f.name));
     var bar = el('div', 'bar'), fill = el('i'); bar.appendChild(fill); row.appendChild(bar); $('#queue').appendChild(row);
-    var fd = new FormData(); fd.append('file', f); fd.append('artist', $('#artist').value);
+    var fd = new FormData(); fd.append('file', f);
     var x = new XMLHttpRequest(); x.open('POST', '/api/upload');
     x.upload.onprogress = function (e) { if (e.lengthComputable) fill.style.width = (e.loaded / e.total * 100) + '%'; };
     x.onload = function () {
